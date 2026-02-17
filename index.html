@@ -2,94 +2,341 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>NEON VOID Easy</title>
+<title>NEON VOID Easy mit Namen & Bonus</title>
 <style>
-body { margin:0; background:black; overflow:hidden; }
+body { margin:0; background:black; overflow:hidden; font-family:monospace; color:#0ff; touch-action:none; }
 canvas { display:block; }
-#score { color:#0ff; font-family:monospace; position:fixed; top:10px; left:10px; font-size:20px; }
+#score { position:fixed; top:10px; left:10px; font-size:20px; z-index:100; }
+#restartBtn {
+    display:none;
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    padding:20px 40px;
+    font-size:24px;
+    background:#0ff;
+    color:black;
+    border:none;
+    cursor:pointer;
+    border-radius:10px;
+    z-index:100;
+}
+#highscoreBtn, #resetBtn, #multiplierBtn {
+    position:fixed;
+    top:10px;
+    padding:10px 20px;
+    font-size:16px;
+    background:#0ff;
+    color:black;
+    border:none;
+    cursor:pointer;
+    border-radius:5px;
+    z-index:100;
+}
+#highscoreBtn { right:10px; }
+#resetBtn { right:150px; display:none; }
+#multiplierBtn { right:300px; }
+#highscoreList {
+    display:none;
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    background:black;
+    color:#0ff;
+    padding:20px;
+    border:2px solid #0ff;
+    border-radius:10px;
+    max-height:70%;
+    overflow-y:auto;
+    z-index:200;
+}
+#closeHighscore {
+    margin-top:10px;
+    padding:5px 10px;
+    cursor:pointer;
+    background:#0ff;
+    color:black;
+    border:none;
+    border-radius:5px;
+}
+#nameInputDiv {
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    text-align:center;
+    z-index:100;
+}
+#playerNameInput {
+    font-size:20px;
+    padding:5px;
+    border-radius:5px;
+    border:none;
+    margin-bottom:10px;
+}
+#startBtn {
+    font-size:20px;
+    padding:10px 20px;
+    border:none;
+    border-radius:5px;
+    background:#0ff;
+    color:black;
+    cursor:pointer;
+}
+#touchControls { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; z-index:1000; }
+#touchControls button { width:60px; height:60px; font-size:24px; background:#0ff; color:black; border:none; border-radius:10px; }
 </style>
 </head>
 <body>
+
+<div id="nameInputDiv">
+    <h2>Gib deinen Namen ein</h2>
+    <input type="text" id="playerNameInput" placeholder="Name">
+    <br>
+    <button id="startBtn">Spiel starten</button>
+</div>
+
 <div id="score">Score: 0</div>
+<button id="restartBtn">Neustart</button>
+<button id="highscoreBtn">Bestenliste</button>
+<button id="resetBtn">Reset Bestenliste</button>
+<button id="multiplierBtn">2× Score aktivieren</button>
+
+<div id="highscoreList">
+    <h2>Bestenliste</h2>
+    <ol id="scores"></ol>
+    <button id="closeHighscore">Schließen</button>
+</div>
+
 <canvas id="game"></canvas>
+
+<!-- Touch Controls für Handy -->
+<div id="touchControls">
+    <button id="upBtn">↑</button>
+    <button id="leftBtn">←</button>
+    <button id="downBtn">↓</button>
+    <button id="rightBtn">→</button>
+</div>
+
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// Spielvariablen
 let score = 0;
-let player = {x:canvas.width/2, y:canvas.height/2, r:15, speed:6}; // schneller Spieler
+let player = {x:canvas.width/2, y:canvas.height/2, r:15, speed:6};
 let enemies = [];
 let keys = {};
 let gameOver = false;
+let gamePaused = false;
+let gameStarted = false;
+let playerName = "";
+let scoreMultiplier = 1;
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+// Buttons & Elemente
+const scoreEl = document.getElementById('score');
+const restartBtn = document.getElementById('restartBtn');
+const highscoreBtn = document.getElementById('highscoreBtn');
+const resetBtn = document.getElementById('resetBtn');
+const multiplierBtn = document.getElementById('multiplierBtn');
+const highscoreListDiv = document.getElementById('highscoreList');
+const scoresOl = document.getElementById('scores');
+const closeHighscore = document.getElementById('closeHighscore');
+const startBtn = document.getElementById('startBtn');
+const nameInputDiv = document.getElementById('nameInputDiv');
+const playerNameInput = document.getElementById('playerNameInput');
+
+// Touch Buttons
+const upBtn = document.getElementById("upBtn");
+const downBtn = document.getElementById("downBtn");
+const leftBtn = document.getElementById("leftBtn");
+const rightBtn = document.getElementById("rightBtn");
+
+function addTouchControl(btn, keyName){
+    btn.addEventListener("touchstart", e=>{
+        e.preventDefault();
+        keys[keyName]=true;
+    }, {passive:false});
+    btn.addEventListener("touchend", e=>{
+        e.preventDefault();
+        keys[keyName]=false;
+    }, {passive:false});
+}
+addTouchControl(upBtn,"ArrowUp");
+addTouchControl(downBtn,"ArrowDown");
+addTouchControl(leftBtn,"ArrowLeft");
+addTouchControl(rightBtn,"ArrowRight");
+
+// Scrollen verhindern auf Touch
+document.body.addEventListener("touchmove", e => { e.preventDefault(); }, {passive:false});
+
+// Geheime Passwörter
+const resetPassword = "meinGeheimesPasswort123"; 
+const multiplierPassword = "doppelpunkt123";
+
+// Tastensteuerung
+document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if(e.key === "Escape" && gameStarted) gamePaused = !gamePaused;
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 
+// Gegner spawnen
 function spawnEnemy() {
-  if(gameOver) return;
-  const edge = Math.floor(Math.random()*4);
-  let x, y;
-  if(edge===0){ x=0; y=Math.random()*canvas.height; }
-  if(edge===1){ x=canvas.width; y=Math.random()*canvas.height; }
-  if(edge===2){ x=Math.random()*canvas.width; y=0; }
-  if(edge===3){ x=Math.random()*canvas.width; y=canvas.height; }
-
-  enemies.push({ x, y, r:10, speed:1.5 }); // leichter Gegner
+    if(gameOver || gamePaused) return;
+    const edge = Math.floor(Math.random()*4);
+    let x, y;
+    if(edge===0){ x=0; y=Math.random()*canvas.height; }
+    if(edge===1){ x=canvas.width; y=Math.random()*canvas.height; }
+    if(edge===2){ x=Math.random()*canvas.width; y=0; }
+    if(edge===3){ x=Math.random()*canvas.width; y=canvas.height; }
+    enemies.push({ x, y, r:10, speed:1.5 });
 }
 
+// Update Spieler & Gegner
 function update() {
-  if(gameOver) return;
+    if(!gameStarted || gameOver || gamePaused) return;
 
-  // Spieler bewegen
-  if(keys["w"]||keys["ArrowUp"]) player.y-=player.speed;
-  if(keys["s"]||keys["ArrowDown"]) player.y+=player.speed;
-  if(keys["a"]||keys["ArrowLeft"]) player.x-=player.speed;
-  if(keys["d"]||keys["ArrowRight"]) player.x+=player.speed;
+    if(keys["w"]||keys["ArrowUp"]) player.y -= player.speed;
+    if(keys["s"]||keys["ArrowDown"]) player.y += player.speed;
+    if(keys["a"]||keys["ArrowLeft"]) player.x -= player.speed;
+    if(keys["d"]||keys["ArrowRight"]) player.x += player.speed;
 
-  player.x = Math.max(player.r, Math.min(canvas.width-player.r, player.x));
-  player.y = Math.max(player.r, Math.min(canvas.height-player.r, player.y));
+    player.x = Math.max(player.r, Math.min(canvas.width-player.r, player.x));
+    player.y = Math.max(player.r, Math.min(canvas.height-player.r, player.y));
 
-  // Gegner bewegen
-  enemies.forEach((e)=>{
-    const dx=player.x-e.x;
-    const dy=player.y-e.y;
-    const dist=Math.hypot(dx,dy);
-    e.x += dx/dist * e.speed;
-    e.y += dy/dist * e.speed;
+    enemies.forEach((e)=>{
+        const dx=player.x-e.x;
+        const dy=player.y-e.y;
+        const dist=Math.hypot(dx,dy);
+        e.x += dx/dist * e.speed;
+        e.y += dy/dist * e.speed;
 
-    if(dist < player.r + e.r){
-      gameOver=true;
-      alert("Game Over! Score: "+score);
-      document.location.reload();
-    }
-  });
+        if(dist < player.r + e.r){
+            gameOver = true;
+            endGame();
+        }
+    });
 
-  score++;
-  document.getElementById('score').innerText = "Score: "+score;
+    score += scoreMultiplier;
+    scoreEl.innerText = "Score: " + score;
 
-  // Gegner spawnen
-  if(Math.random()<0.02) spawnEnemy(); // moderate Häufigkeit
+    if(Math.random()<0.02) spawnEnemy();
 }
 
+// Spielende
+function endGame(){
+    restartBtn.style.display = "block";
+
+    let highscores = JSON.parse(localStorage.getItem('neonHighscores') || "[]");
+    const existingIndex = highscores.findIndex(s => s.name === playerName);
+    if(existingIndex >= 0){
+        if(score > highscores[existingIndex].score){
+            highscores[existingIndex].score = score;
+        }
+    } else {
+        highscores.push({name: playerName, score: score});
+    }
+    highscores.sort((a,b)=>b.score - a.score);
+    highscores = highscores.slice(0,10);
+    localStorage.setItem('neonHighscores', JSON.stringify(highscores));
+}
+
+// Neustart
+restartBtn.addEventListener('click', ()=>{
+    player.x = canvas.width/2;
+    player.y = canvas.height/2;
+    enemies = [];
+    score = 0;
+    scoreMultiplier = 1;
+    gameOver = false;
+    gamePaused = false;
+    restartBtn.style.display = "none";
+    scoreEl.innerText = "Score: 0";
+});
+
+// Bestenliste
+highscoreBtn.addEventListener('click', ()=>{
+    scoresOl.innerHTML = "";
+    let highscores = JSON.parse(localStorage.getItem('neonHighscores') || "[]");
+    highscores.forEach(s=>{
+        const li = document.createElement('li');
+        li.textContent = s.name + ": " + s.score;
+        scoresOl.appendChild(li);
+    });
+    highscoreListDiv.style.display = "block";
+});
+closeHighscore.addEventListener('click', ()=>{ highscoreListDiv.style.display = "none"; });
+
+// Geheimer Reset-Button
+function enableReset() {
+    const pass = prompt("Gib das Passwort ein, um die Bestenliste zurückzusetzen:");
+    if(pass === resetPassword){
+        resetBtn.style.display = "block";
+        alert("Reset-Button aktiviert!");
+    } else {
+        alert("Falsches Passwort!");
+    }
+}
+resetBtn.addEventListener('click', ()=>{
+    if(confirm("Willst du wirklich die Bestenliste löschen?")){
+        localStorage.setItem('neonHighscores', JSON.stringify([]));
+        alert("Bestenliste wurde zurückgesetzt!");
+        resetBtn.style.display = "none";
+    }
+});
+
+// 2x Score Button
+multiplierBtn.addEventListener('click', ()=>{
+    const pass = prompt("Gib das geheime Passwort für 2x Score ein:");
+    if(pass === multiplierPassword){
+        scoreMultiplier = 2;
+        alert("Score-Multiplikator aktiviert!");
+    } else {
+        alert("Falsches Passwort!");
+    }
+});
+
+// Spiel starten nach Name
+function startGame() {
+    const name = playerNameInput.value.trim();
+    if(name === "") return alert("Bitte gib einen Namen ein!");
+    playerName = name;
+    gameStarted = true;
+    nameInputDiv.style.display = "none";
+}
+startBtn.addEventListener('click', startGame);
+playerNameInput.addEventListener('keydown', e => { if(e.key==="Enter") startGame(); });
+
+// Zeichnen
 function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Spieler
-  ctx.fillStyle="#0ff";
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
-  ctx.fill();
+    if(!gameStarted) return;
 
-  // Gegner
-  ctx.fillStyle="#f0f";
-  enemies.forEach(e=>{
+    ctx.fillStyle="#0ff";
     ctx.beginPath();
-    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+    ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
     ctx.fill();
-  });
+
+    ctx.fillStyle="#f0f";
+    enemies.forEach(e=>{
+        ctx.beginPath();
+        ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    if(gamePaused){
+        ctx.fillStyle="#0ff";
+        ctx.font="50px monospace";
+        ctx.textAlign="center";
+        ctx.fillText("PAUSE", canvas.width/2, canvas.height/2);
+    }
 }
 
 function loop(){ update(); draw(); requestAnimationFrame(loop); }
